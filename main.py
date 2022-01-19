@@ -4,16 +4,19 @@ import pandas as pd
 import pytz
 import sys
 import logging
-
+import os
 from alpaca_trade_api import Stream
 from alpaca_trade_api.common import URL
 from alpaca_trade_api.rest import TimeFrame
 
 logger = logging.getLogger()
 
-ALPACA_API_KEY = "<key_id>"
-ALPACA_SECRET_KEY = "<secret_key>"
-
+ALPACA_API_KEY = os.environ.get('APCA_API_KEY_ID')
+ALPACA_SECRET_KEY = os.environ.get('APCA_API_SECRET_KEY')
+ALPACA_BASE_URL_WSS = os.environ.get('APCA_API_BASE_URL_WSS')
+ALPACA_BASE_URL_REST = os.environ.get('APCA_API_BASE_URL_REST')
+ALPACA_DATA_FEED = os.environ.get('APCA_API_DATA_FEED')
+ALPACA_DATA_URL = os.environ.get('APCA_API_DATA_URL')
 
 class ScalpAlgo:
     def __init__(self, api, symbol, lot):
@@ -27,16 +30,16 @@ class ScalpAlgo:
         market_open = now.replace(hour=9, minute=30)
         today = now.strftime('%Y-%m-%d')
         tomorrow = (now + pd.Timedelta('1day')).strftime('%Y-%m-%d')
-        while 1:
-            # at inception this results sometimes in api errors. this will work
-            # around it. feel free to remove it once everything is stable
-            try:
-                data = api.get_bars(symbol, TimeFrame.Minute, today, tomorrow,
+        # while 1:
+        #     # at inception this results sometimes in api errors. this will work
+        #     # around it. feel free to remove it once everything is stable
+        #     try:
+        data = api.get_bars(symbol, TimeFrame.Minute, today, tomorrow,
                                     adjustment='raw').df
-                break
-            except:
-                # make sure we get bars
-                pass
+            #     break
+            # except:
+            #     # make sure we get bars
+            #     pass
         bars = data[market_open:]
         self._bars = bars
 
@@ -218,11 +221,10 @@ class ScalpAlgo:
 def main(args):
     stream = Stream(ALPACA_API_KEY,
                     ALPACA_SECRET_KEY,
-                    base_url=URL('https://paper-api.alpaca.markets'),
-                    data_feed='iex')  # <- replace to sip for PRO subscription
+                    base_url=URL(ALPACA_BASE_URL_WSS),
+                    data_feed='sip')  # <- replace to sip for PRO subscription
     api = alpaca.REST(key_id=ALPACA_API_KEY,
-                    secret_key=ALPACA_SECRET_KEY,
-                    base_url="https://paper-api.alpaca.markets")
+                    secret_key=ALPACA_SECRET_KEY)
 
     fleet = {}
     symbols = args.symbols
@@ -269,7 +271,9 @@ if __name__ == '__main__':
 
     fmt = '%(asctime)s:%(filename)s:%(lineno)d:%(levelname)s:%(name)s:%(message)s'
     logging.basicConfig(level=logging.INFO, format=fmt)
-    fh = logging.FileHandler('console.log')
+    now = pd.Timestamp.now(tz='America/New_York').floor('1min')
+    today = now.strftime('%Y-%m-%d')
+    fh = logging.FileHandler('ScalpLog_{}.log'.format(today))
     fh.setLevel(logging.INFO)
     fh.setFormatter(logging.Formatter(fmt))
     logger.addHandler(fh)
