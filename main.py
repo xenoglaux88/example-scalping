@@ -13,8 +13,7 @@ logger = logging.getLogger()
 
 ALPACA_API_KEY = os.environ.get('APCA_API_KEY_ID')
 ALPACA_SECRET_KEY = os.environ.get('APCA_API_SECRET_KEY')
-ALPACA_BASE_URL_WSS = os.environ.get('APCA_API_BASE_URL_WSS')
-ALPACA_BASE_URL_REST = os.environ.get('APCA_API_BASE_URL_REST')
+ALPACA_BASE_URL = os.environ.get('APCA_API_BASE_URL')
 ALPACA_DATA_FEED = os.environ.get('APCA_API_DATA_FEED')
 ALPACA_DATA_URL = os.environ.get('APCA_API_DATA_URL')
 
@@ -221,7 +220,7 @@ class ScalpAlgo:
 def main(args):
     stream = Stream(ALPACA_API_KEY,
                     ALPACA_SECRET_KEY,
-                    base_url=URL(ALPACA_BASE_URL_WSS),
+                    base_url=URL(ALPACA_BASE_URL),
                     data_feed='sip')  # <- replace to sip for PRO subscription
     api = alpaca.REST(key_id=ALPACA_API_KEY,
                     secret_key=ALPACA_SECRET_KEY)
