@@ -9,3 +9,5 @@ __pycache__
 algo-state.pkl
 /data
 console.log
+.idea
+*.log

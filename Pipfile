@@ -5,6 +5,8 @@ name = "pypi"
 
 [packages]
 alpaca-trade-api = ">=1.0.1"
+TA-Lib = "*"
+pandas-ta = "*"
 websockets = "*"
 
 [dev-packages]

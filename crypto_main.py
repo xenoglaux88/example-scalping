@@ -1,10 +1,10 @@
-import alpaca_trade_api as alpaca
 import asyncio
-import pandas as pd
-import pytz
-import sys
 import logging
 import os
+import pandas_ta as ta
+import alpaca_trade_api as alpaca
+import pandas as pd
+import pytz
 from alpaca_trade_api import Stream
 from alpaca_trade_api.common import URL
 from alpaca_trade_api.rest import TimeFrame
@@ -28,19 +28,12 @@ class ScalpAlgo:
         now = pd.Timestamp.now(tz='America/New_York').floor('1min')
         market_open = now.replace(hour=9, minute=30)
         today = now.strftime('%Y-%m-%d')
+        yesterday = (now - pd.Timedelta('1Day')).strftime('%Y-%m-%d')
         tomorrow = (now + pd.Timedelta('1day')).strftime('%Y-%m-%d')
-        # while 1:
-        #     # at inception this results sometimes in api errors. this will work
-        #     # around it. feel free to remove it once everything is stable
-        #     try:
-        data = api.get_bars(symbol, TimeFrame.Minute, today, tomorrow,
-                                    adjustment='raw').df
-            #     break
-            # except:
-            #     # make sure we get bars
-            #     pass
-        bars = data[market_open:]
-        self._bars = bars
+
+        data = api.get_crypto_bars(symbol, TimeFrame.Minute, yesterday, today).df
+
+        self._bars = data
 
         self._init_state()
 
@@ -82,7 +75,7 @@ class ScalpAlgo:
         if (order is not None and
             order.side == 'buy' and now -
                 order.submitted_at.tz_convert(tz='America/New_York') > pd.Timedelta('2 min')):
-            last_price = self._api.get_last_trade(self._symbol).price
+            last_price = self._api.get_latest_crypto_trade(self._symbol, exchange='crypto').price
             self._l.info(
                 f'canceling missed buy order {order.id} at {order.limit_price} '
                 f'(current price = {last_price})')
@@ -96,21 +89,31 @@ class ScalpAlgo:
             self._api.cancel_order(self._order.id)
 
     def _calc_buy_signal(self):
-        mavg = self._bars.rolling(20).mean().close.values
+        # mavg = self._bars.rolling(20).mean().close.values
+        indicators = pd.DataFrame()
         indicators = self._bars.join(self._bars.ta.adx())
         indicators['sma_9'] = indicators.ta.sma(length=9)
         indicators['sma_12'] = indicators.ta.sma(length=12)
-        closes = self._bars.close.values
-        if closes[-2] < mavg[-2] and closes[-1] > mavg[-1] and \
-                indicators.DMP_14[-2] < indicators.DMP_14[-1] > indicators.DMN_14[-1]:
+        sma_9_idx = indicators.columns.get_loc('sma_9')
+        sma_12_idx = indicators.columns.get_loc('sma_12')
+        if indicators.sma_9[-2] < indicators.sma_12[-2] and \
+                indicators.sma_9[-1] > indicators.sma_12[-1]:
+
             self._l.info(
-                f'buy signal: closes[-2] {closes[-2]} < mavg[-2] {mavg[-2]} '
-                f'closes[-1] {closes[-1]} > mavg[-1] {mavg[-1]}')
+                f'buy signal: sma 9 crossover [up] ')
             return True
         else:
-            self._l.info(
-                f'closes[-2:] = {closes[-2:]}, mavg[-2:] = {mavg[-2:]}')
             return False
+        # closes = self._bars.close.values
+        # if closes[-2] < mavg[-2] and closes[-1] > mavg[-1]:
+        #     self._l.info(
+        #         f'buy signal: closes[-2] {closes[-2]} < mavg[-2] {mavg[-2]} '
+        #         f'closes[-1] {closes[-1]} > mavg[-1] {mavg[-1]}')
+        #     return True
+        # else:
+        #     self._l.info(
+        #         f'closes[-2:] = {closes[-2:]}, mavg[-2:] = {mavg[-2:]}')
+        #     return False
 
     def on_bar(self, bar):
         self._bars = self._bars.append(pd.DataFrame({
@@ -166,7 +169,7 @@ class ScalpAlgo:
                 self._l.warn(f'unexpected state for {event}: {self._state}')
 
     def _submit_buy(self):
-        trade = self._api.get_last_trade(self._symbol)
+        trade = self._api.get_latest_crypto_trade(self._symbol, exchange='crypto')
         amount = int(self._lot / trade.price)
         try:
             order = self._api.submit_order(
@@ -197,10 +200,10 @@ class ScalpAlgo:
             params['type'] = 'market'
         else:
             current_price = float(
-                self._api.get_last_trade(
-                    self._symbol).price)
+                self._api.get_latest_crypto_trade(
+                    self._symbol, exchange='crypto').price)
             cost_basis = float(self._position.avg_entry_price)
-            limit_price = max(cost_basis + 0.01, current_price)
+            limit_price = max(cost_basis + 0.03, current_price)
             params.update(dict(
                 type='limit',
                 limit_price=limit_price,
@@ -228,7 +231,7 @@ def main(args):
                     data_feed='sip')  # <- replace to sip for PRO subscription
     api = alpaca.REST(key_id=ALPACA_API_KEY,
                     secret_key=ALPACA_SECRET_KEY)
-    crypto = True
+
 
     fleet = {}
     symbols = args.symbols
@@ -241,7 +244,7 @@ def main(args):
             fleet[data.symbol].on_bar(data)
 
     for symbol in symbols:
-        stream.subscribe_bars(on_bars, symbol)
+        stream.subscribe_crypto_bars(on_bars, symbol)
 
     async def on_trade_updates(data):
         logger.info(f'trade_updates {data}')
@@ -253,9 +256,6 @@ def main(args):
 
     async def periodic():
         while True:
-            if not api.get_clock().is_open:
-                logger.info('exit as market is not open')
-                sys.exit(0)
             await asyncio.sleep(30)
             positions = api.list_positions()
             for symbol, algo in fleet.items():
